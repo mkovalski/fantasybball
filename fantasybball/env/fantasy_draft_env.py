@@ -9,6 +9,7 @@ class FantasyBBallEnv():
     COLS = ['FG%', 'FT%', '3PM',
             'PTS', 'TREB', 'AST',
             'STL', 'BLK', 'TO']
+
     def __init__(self,
                  num_opponents = 10,
                  num_picks = 10,
@@ -38,7 +39,11 @@ class FantasyBBallEnv():
         self.player_num = None
         self.curr_round = None
         self.curr_state = None
-        self.index_to_df = []
+
+        if not self.shuffle:
+            self.index_to_df = np.arange(0, self.init_state.shape[0]).astype(np.int)
+        else:
+            self.index_to_df = []
 
     def __normalize_dataframe(self):
         '''Normalize the dataframe and get the scaler for each'''
@@ -61,6 +66,7 @@ class FantasyBBallEnv():
             player (int): The marker for the player
 
         '''
+        # Find only open slots to sample
         indices = np.where(state[:, 0] == 0)[0]
         idx = np.random.choice(indices)
         state[idx, 0] = player
@@ -74,7 +80,7 @@ class FantasyBBallEnv():
 
         # Shuffle up the board
         if self.shuffle:
-            indices = np.arange(0, self.curr_state.shape[0])
+            indices = np.arange(0, self.curr_state.shape[0]).astype(np.int)
             np.random.shuffle(indices)
             self.curr_state = self.curr_state[indices, :]
             self.index_to_df = indices
@@ -112,6 +118,11 @@ class FantasyBBallEnv():
                 if owner not in player_map:
                     player_map[owner] = []
                 player_map[owner].append(i)
+
+        # Get original order of indices
+        if self.shuffle:
+            for key, value in player_map.items():
+                player_map[key] = self.index_to_df[np.array(value)]
 
         me = player_map.pop(-1)
         columns = [self.df.columns.get_loc(x) for x in self.COLS]
@@ -156,7 +167,7 @@ class FantasyBBallEnv():
         return np.copy(self.curr_state), 0, False, 'Still grindin'
 
 if __name__ == '__main__':
-    env = FantasyBBallEnv()
+    env = FantasyBBallEnv(shuffle = True)
     state = env.reset()
 
     done = False

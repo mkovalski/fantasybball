@@ -3,6 +3,8 @@
 from fantasybball.scrapers.get_htb_data import get_htb_data
 import numpy as np
 
+'''Run a simulation for a fixed number of iterations and try and pick the best team'''
+
 CATEGORIES = ['FG%', 'FT%', '3PM', 'PTS',
               'TREB', 'AST', 'STL', 'BLK', 'TO']
 
@@ -14,7 +16,6 @@ class Player:
         self.players = []
 
     def choose(self, df):
-        # Why can't I choose a fucking view here, this is terrible
         avail = df[df.TAKEN == 0]
         idx = np.random.choice(avail.index)
         df.iloc[idx, df.columns.get_loc('TAKEN')] = self.num
