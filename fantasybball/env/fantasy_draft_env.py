@@ -84,11 +84,11 @@ class FantasyBBallEnv():
 
         return np.copy(self.curr_state)
 
-    def sample(self):
+    def sample(self, state):
         # Filter based on available moves
-        indices = np.where(self.curr_state[:, 0] == 0)[0]
+        indices = np.where(state[:, 0] == 0)[0]
         idx = np.random.choice(indices)
-        action = np.zeros(self.curr_state.shape[0])
+        action = np.zeros(state.shape[0])
         action[idx] = 1
         return action
 
@@ -162,6 +162,6 @@ if __name__ == '__main__':
     done = False
 
     while not done:
-        action = env.sample()
+        action = env.sample(state)
         next_state, reward, done, info = env.step(action)
 

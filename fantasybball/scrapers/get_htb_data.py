@@ -35,6 +35,8 @@ def clean_data(df):
     return df
 
 def get_htb_data():
+    '''Grab data from hashtag basketball. Uses simple layout from site'''
+    # TODO: Add customization for things like > 200 players in table view
     page = requests.get(URL)
     page.raise_for_status()
 
