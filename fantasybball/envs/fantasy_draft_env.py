@@ -11,7 +11,7 @@ class FantasyBBallEnv():
             'PTS', 'TREB', 'AST',
             'STL', 'BLK', 'TO']
     POS = OrderedDict(PG = 1, SG = 2, SF = 3, PF = 4, C = 5)
-
+    CENTER_INDEX = -1
     TAKEN_INDEX = 0
 
     def __init__(self,
@@ -39,7 +39,6 @@ class FantasyBBallEnv():
 
         self.num_opponents = num_opponents
         self.num_picks = num_picks
-        self.shuffle = shuffle
         self.flatten_state = flatten_state
         self.max_centers = max_centers
         self.opponent_strategy = opponent_strategy
@@ -55,7 +54,7 @@ class FantasyBBallEnv():
         self.init_state.flags.writeable = False
 
         # Get center indices for filtering moves
-        self.center_indices = self.get_center_indices()
+        self.center_indices = self.__get_center_indices()
 
         # To be set by reset() function
         self.player_num = None
@@ -63,18 +62,12 @@ class FantasyBBallEnv():
         self.curr_state = None
         self.centers_chosen = None
 
-        if not self.shuffle:
-            self.index_to_df = np.arange(0, self.init_state.shape[0]).astype(np.int)
-        else:
-            self.index_to_df = []
-
         self.df_to_idx = None
 
-    def get_center_indices(self):
+    def __get_center_indices(self):
         centers = self.df.POS.apply(lambda x: x.split(','))
 
         indices = []
-        # TODO: Optimize
         for i in range(len(centers)):
             if 'C' in centers.iloc[i]:
                 indices.append(i)
@@ -116,6 +109,9 @@ class FantasyBBallEnv():
         '''
         # Find only open slots to sample
         indices = np.where(state[:, self.TAKEN_INDEX] == 0)[0]
+        if self.should_apply_center_indices(state, player_num = player):
+            indices = list(set(indices) - self.center_indices)
+
         idx = np.random.choice(indices)
         state[idx, 0] = player
 
@@ -127,15 +123,13 @@ class FantasyBBallEnv():
             return
 
         indices = np.where(state[:, self.TAKEN_INDEX] == 0)[0]
-        df_indices = indices
-        if self.shuffle:
-            df_indices = self.index_to_df[indices]
+        if self.should_apply_center_indices(state, player_num = player):
+            indices = list(set(indices) - self.center_indices)
 
         # Choose highest available ranking
-        rankings = self.df.iloc[df_indices]['R#']
+        rankings = self.df.iloc[indices]['R#']
         idx = np.argmin(rankings)
-        state[df_indices[idx], 0] = player
-
+        state[indices[idx], 0] = player
 
     def get_state_shape(self):
         if self.flatten_state:
@@ -152,13 +146,6 @@ class FantasyBBallEnv():
         self.centers_chosen = 0
 
         self.curr_state = self.init_state.copy()
-
-        # Shuffle up the board
-        if self.shuffle:
-            indices = np.arange(0, self.curr_state.shape[0]).astype(np.int)
-            np.random.shuffle(indices)
-            self.curr_state = self.curr_state[indices, :]
-            self.index_to_df = indices
 
         for i in range(1, self.player_num):
             self.opponent_function(state = self.curr_state, player = i)
@@ -179,6 +166,8 @@ class FantasyBBallEnv():
             state = self.reshape_state(state)
         # Filter based on available moves
         indices = np.where(state[:, self.TAKEN_INDEX] == 0)[0]
+        if self.should_apply_center_indices(state, player_num = -1):
+            indices = list(set(indices) - self.center_indices)
         idx = np.random.choice(indices)
         action = np.zeros(state.shape[0])
         action[idx] = 1
@@ -187,13 +176,10 @@ class FantasyBBallEnv():
     def __clean_action(self, state, action):
         # Internal version of cleaning up an action
         removed_indices = np.where(state[:, self.TAKEN_INDEX] != 0)[0]
-        if self.centers_chosen >= self.max_centers:
-            if self.shuffle:
-                raise NotImplementedError
-
-            removed_indices = np.array(list(set(removed_indices).union(self.center_indices)))
-
         action[removed_indices] = float('-inf')
+
+        if self.centers_chosen >= self.max_centers:
+            action[list(self.center_indices)] = float('-inf')
 
     def clean_action(self, state, action):
         if self.flatten_state:
@@ -201,6 +187,20 @@ class FantasyBBallEnv():
 
         indices = np.where(state[:, :, self.TAKEN_INDEX] != 0)
         action[indices] = float('-inf')
+        self.update_action_centers(state, action, player_num = -1)
+
+    def update_action_centers(self, state, action, player_num):
+        # TODO: Vectorize
+        for i in range(state.shape[0]):
+            indices = np.where((state[i, :, self.TAKEN_INDEX] == player_num) & (state[i, :, self.CENTER_INDEX] == 1))
+            if len(indices[0]) >= self.max_centers:
+                action[i, list(self.center_indices)] = float('-inf')
+
+    def should_apply_center_indices(self, state, player_num):
+        center_indices = np.where((state[:, 0] == player_num) & (state[:, -1] == 1))
+        if len(center_indices[0]) >= self.max_centers:
+            return True
+        return False
 
     def calculate_reward(self, state):
         '''
@@ -220,11 +220,6 @@ class FantasyBBallEnv():
                 if owner not in player_map:
                     player_map[owner] = []
                 player_map[owner].append(i)
-
-        # Get original order of indices
-        if self.shuffle:
-            for key, value in player_map.items():
-                player_map[key] = self.index_to_df[np.array(value)]
 
         me = player_map.pop(-1)
         columns = [self.df.columns.get_loc(x) for x in self.COLS]
@@ -252,12 +247,7 @@ class FantasyBBallEnv():
 
         self.curr_state[idx, 0] = -1 # -1 marks us for now
 
-        # Update if we chose a center
-        df_idx = idx
-        if self.shuffle:
-            df_idx = self.index_to_df[idx]
-
-        if df_idx in self.center_indices:
+        if idx in self.center_indices:
             self.centers_chosen += 1
 
         # Next player to end of players
@@ -287,8 +277,6 @@ class FantasyBBallEnv():
 
     def print_action(self, action, move_num):
         idx = np.argmax(action)
-        if self.shuffle:
-            idx = self.index_to_df[idx]
 
         player_selected = self.df.iloc[idx].PLAYER
         pick_num = (move_num * self.num_opponents) + self.player_num
