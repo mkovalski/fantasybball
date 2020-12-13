@@ -30,6 +30,8 @@ def clean_data(df):
     for key in ['3PM', 'PTS', 'TREB', 'AST', 'STL', 'BLK', 'TO', 'TOTAL']:
         df[key] = df[key].astype(np.float32)
 
+    df['R#'] = df['R#'].astype(np.int)
+
     df.index = range(len(df))
 
     return df
